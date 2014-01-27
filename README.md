@@ -21,6 +21,7 @@ in your template without additional overhead.
 * {exp:cat2:id}
 * {exp:cat2:name}
 * {exp:cat2:url_title}
+* {exp:cat2:field_value}
 
 ##Parameters:
 * category_url_title=
@@ -54,6 +55,10 @@ category_url_title from category_id:
 category_url_title from category_name:
 
 	{exp:cat2:url_title category_name="my category" category_group="5"}
+
+category_field from field_short_name and category
+
+	{exp:cat2:field_value field_short_name="my_field" category_url_title="my_category" category_group="5" default_value="Default value"}
 
 Can also be used as a tag pair, e.g.:
 
