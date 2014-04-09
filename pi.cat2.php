@@ -2,7 +2,7 @@
 
 $plugin_info = array(
   'pi_name' => 'Cat2',
-  'pi_version' =>'1.1.1',
+  'pi_version' =>'1.1.11',
   'pi_author' =>'Mark Croxton',
   'pi_author_url' => 'http://www.hallmark-design.co.uk/',
   'pi_description' => 'Convert between category name, category id and category url title',
@@ -30,24 +30,17 @@ class Cat2 {
 	 */
 	function Cat2() 
 	{
-		$this->EE =& get_instance();	
-		$this->site = $this->EE->config->item('site_id');
+		$this->site = ee()->config->item('site_id');
 		
 		// register parameters
-		$this->category_url_title = strtolower($this->EE->TMPL->fetch_param('category_url_title', ''));
-		$this->category_name = strtolower($this->EE->TMPL->fetch_param('category_name', ''));
-		$this->category_id = preg_replace("/[^0-9]/", '', $this->EE->TMPL->fetch_param('category_id', NULL));
-		$this->category_group = $this->EE->TMPL->fetch_param('category_group', '');
-		$this->field_short_name = strtolower($this->EE->TMPL->fetch_param('field_short_name', ''));
-		$this->field_id = preg_replace("/[^0-9]/", '', $this->EE->TMPL->fetch_param('field_id', NULL));
-		$this->default_value = $this->EE->TMPL->fetch_param('default_value', '');
-		$this->_debug = (bool) preg_match('/1|on|yes|y/i', $this->EE->TMPL->fetch_param('debug'));	
-		
-		// set up cache
-		if ( ! isset($this->EE->session->cache[__CLASS__]))
-        {
-            $this->EE->session->cache[__CLASS__] = array();
-        }
+		$this->category_url_title = strtolower(ee()->TMPL->fetch_param('category_url_title', ''));
+		$this->category_name      = strtolower(ee()->TMPL->fetch_param('category_name', ''));
+		$this->category_id        = preg_replace("/[^0-9]/", '', ee()->TMPL->fetch_param('category_id', NULL));
+		$this->category_group     = preg_replace("/[^0-9]/", '', ee()->TMPL->fetch_param('category_group', '0')); // Can have same category_url_titles in different groups
+		$this->field_short_name   = strtolower(ee()->TMPL->fetch_param('field_short_name', ''));
+		$this->field_id           = preg_replace("/[^0-9]/", '', ee()->TMPL->fetch_param('field_id', NULL));
+		$this->default_value      = ee()->TMPL->fetch_param('default_value', '');
+		$this->_debug             = (bool) preg_match('/1|on|yes|y/i', ee()->TMPL->fetch_param('debug'));	
 	}
 	
 	/** 
@@ -159,38 +152,42 @@ class Cat2 {
 	 */
 	protected function cat_query($col, $key, $value)
 	{
-		if ( ! isset($this->EE->session->cache[__CLASS__][$col][$value]) )
+	  $cache_key     = $this->cache_key($col, $key, $value);
+	  $cached_result = ee()->cache->get($cache_key);
+		if (empty($cached_result))
 		{
 			// query
-			$this->EE->db->select($col);
-			$this->EE->db->from('exp_categories');
-			$this->EE->db->where('site_id', $this->site);
+			ee()->db->select($col);
+			ee()->db->from('exp_categories');
+			ee()->db->where('site_id', $this->site);
 		
 			if ($key == 'cat_id')
 			{
-				$this->EE->db->where($key, $value);
+				ee()->db->where($key, $value);
 			}
 			else
 			{
-				$this->EE->db->where("LOWER({$key})", $value);
+				ee()->db->where("LOWER({$key})", $value);
 			}
 			
 			if ( ! empty($this->category_group))
 			{
-				$this->EE->db->where('group_id', $this->category_group);
+				ee()->db->where('group_id', $this->category_group);
 			}
 			
 			// run the query
-			$results = $this->EE->db->get();
+			$results = ee()->db->get();
 			
 			if ($results->num_rows() > 0) 
 			{
-				$this->EE->session->cache[__CLASS__][$col][$value] = $results->row($col);
+			  $cached_result = $results->row($col);
+				ee()->cache->save($cache_key, $cached_result);
 			}
 			else
 			{
 				// fail gracefully
-				$this->EE->session->cache[__CLASS__][$col][$value] = '';
+				//ee()->session->cache[__CLASS__][$col][$value] = '';
+				// How to do this with new Cache class?
 				
 				if ($this->_debug)
 				{
@@ -200,7 +197,7 @@ class Cat2 {
 		}
 		
 		// is this a tag pair?
-		$tagdata = $this->EE->TMPL->tagdata;
+		$tagdata = ee()->TMPL->tagdata;
 	
 		if ( ! empty($tagdata))
 		{
@@ -217,16 +214,15 @@ class Cat2 {
   		    $tmpl_variable = 'category_id';
           break;
 		  }
-			return $this->EE->TMPL->swap_var_single(
-							$tmpl_variable, 
-							$this->EE->session->cache[__CLASS__][$col][$value], 
-							$tagdata
+			return ee()->TMPL->parse_variables_row(
+							$tagdata,
+							array($tmpl_variable => $cached_result)
 					);
 		}
 		else
 		{
 			// output direct
-			return $this->EE->session->cache[__CLASS__][$col][$value];
+			return $cached_result;
 		}
 	}
 	
@@ -257,17 +253,22 @@ class Cat2 {
 		{
   		if (!empty($this->category_url_title))
   		{
+  		  $key   = 'cat_url_title';
   			$value = $this->category_url_title;
   		}
   		else
   		{
+  		  $key   = 'cat_name';
   			$value = $this->category_name;
   		}
-  		if (empty($this->EE->session->cache[__CLASS__]['cat_id'][$value]))
+
+  		$cache_key     = $this->cache_key('cat_id', $key, $value);
+  		$cat_id_cached = ee()->cache->get($cache_key);
+  		if (empty($cat_id_cached))
   		{
-    		$this->id(); // Don't know what this will return, e.g. in lieu of category pair
+    		$this->id(); // Don't know what this will return, e.g. in lieu of category pair, but if it works it will cache the category_id
   		}
-  		if ( ! ($this->category_id = $this->EE->session->cache[__CLASS__]['cat_id'][$value]))
+  		if ( ! ($this->category_id = ee()->cache->get($cache_key)))
   		{
   		  // fail
     		return $this->default_value; // No reason for error message, above will do that.
@@ -279,29 +280,33 @@ class Cat2 {
 		if (empty($this->field_id))
 		{
 	    // Maybe we already know the field_id?
-		  if ( ! empty($this->EE->session->cache[__CLASS__]['field_id'][$this->field_short_name]))
+		  $field_id_cache_key = $this->cache_key('field_id', $this->field_short_name);
+		  $field_id_cached    = ee()->cache->get($field_id_cache_key);
+		  if ( ! empty($field_id_cached))
 		  {
-  		  $this->field_id = $this->EE->session->cache[__CLASS__]['field_id'][$this->field_short_name];
+  		  $this->field_id = $field_id_cached;
 		  }
 		  else
 		  {
     		// Even though group_id is a column in the exp_category_fields table,
     		// apparently field_names are unique to a site.
-    		$this->EE->db->select('field_id')
+    		ee()->db->select('field_id')
     		             ->from('exp_category_fields')
     		             ->where('site_id', $this->site)
     		             ->where('field_name', $this->field_short_name);
   
-        $results = $this->EE->db->get();
+        $results = ee()->db->get();
         if ($results->num_rows() > 0) 
         {
-          $this->EE->session->cache[__CLASS__]['field_id'][$this->field_short_name] = $results->row('field_id');
-          $this->field_id = $this->EE->session->cache[__CLASS__]['field_id'][$this->field_short_name];
+          $field_id_cached = $results->row('field_id');
+          ee()->cache->save($field_id_cache_key, $field_id_cached);
+          $this->field_id = $field_id_cached;
         }
         else
         {
   				// fail gracefully
-  				$this->EE->session->cache[__CLASS__]['field_id'][$this->field_short_name] = '';
+  				//ee()->session->cache[__CLASS__]['field_id'][$this->field_short_name] = '';
+  				// How to do this with new Cache Class?
   				
   				if ($this->_debug)
   				{
@@ -313,9 +318,11 @@ class Cat2 {
 		}
 		
 		$field_cache_value = $this->category_id . ':' . $this->field_id;
-	  if (empty($this->EE->session->cache[__CLASS__]['field_value'][$field_cache_value]))
+		$field_value_cache_key = $this->cache_key('field_value', $this->category_id, $this->field_id);
+		$field_value_cached    = ee()->cache->get($field_value_cache_key);
+	  if (empty($field_value_cached))
 	  {
-  		$results = $this->EE->db->select('field_id_'.$this->field_id)
+  		$results = ee()->db->select('field_id_'.$this->field_id)
   		                        ->from('exp_category_field_data')
   		                        ->where('site_id', $this->site)
   		                        ->where('cat_id', $this->category_id)
@@ -323,26 +330,46 @@ class Cat2 {
   		
   		if ($results->num_rows() > 0)
   		{
-    		$this->EE->session->cache[__CLASS__]['field_value'][$field_cache_value] = $results->row('field_id_'.$this->field_id);    		
-    		if (empty($this->EE->session->cache[__CLASS__]['field_value'][$field_cache_value]))
+  		  $field_value_result = $results->row('field_id_'.$this->field_id);
+    		if ( ! empty($field_value_result))
     		{
-    		  $this->EE->session->cache[__CLASS__]['field_value'][$field_cache_value] = $this->default_value;
+          $field_value_cached = $field_value_result;
+      		ee()->cache->save($field_value_cache_key, $field_value_result);
     		}
   		}
   		else
   		{
   			// fail gracefully
-  			$this->EE->session->cache[__CLASS__]['field_value'][$field_cache_value] = '';
+  			//ee()->session->cache[__CLASS__]['field_value'][$field_cache_value] = '';
+  			// How to do this with new Cache Class?
   			
   			if ($this->_debug)
   			{
   				show_error(__CLASS__.' error: category field value was not found.');
   			}
-  			return $this->default_value;
   		}
 		}
+		// If the value hasn't changed cache and return the default
+	  if (empty($field_value_cached))
+	  {
+	    $field_value_cached = $this->default_value;
+		  ee()->cache->save($field_value_cache_key, $this->default_value);  	  
+	  }
+
 		// Sorry, neither tag pair check, nor category field value formatting.
-		return $this->EE->session->cache[__CLASS__]['field_value'][$field_cache_value];  		
+		return $field_value_cached;
+	}
+	
+	/** 
+	 * cache_key
+	 * Shortcut for setting/retrieving Cache Class keys
+	 *
+	 * @access public
+	 * @return string
+	 */
+	public function cache_key($col, $key, $value = '')
+	{
+  	return '/'.__CLASS__.'/'.$this->category_group.'/'.$col.'/'.$key . (strlen($value) ? '/'.$value : '');
 	}
 
 	// usage instructions
