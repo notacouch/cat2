@@ -31,11 +31,13 @@ class Cat2 {
 	function Cat2() 
 	{
 		$this->site = ee()->config->item('site_id');
+		$cat_id = explode('|', ee()->TMPL->fetch_param('category_id', NULL));
+
 		
 		// register parameters
 		$this->category_url_title = strtolower(ee()->TMPL->fetch_param('category_url_title', ''));
 		$this->category_name      = strtolower(ee()->TMPL->fetch_param('category_name', ''));
-		$this->category_id        = preg_replace("/[^0-9]/", '', ee()->TMPL->fetch_param('category_id', NULL));
+		$this->category_id        = preg_replace("/[^0-9]/", '', $cat_id[0]);
 		$this->category_group     = preg_replace("/[^0-9]/", '', ee()->TMPL->fetch_param('category_group', '0')); // Can have same category_url_titles in different groups
 		$this->field_short_name   = strtolower(ee()->TMPL->fetch_param('field_short_name', ''));
 		$this->field_id           = preg_replace("/[^0-9]/", '', ee()->TMPL->fetch_param('field_id', NULL));
